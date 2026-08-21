@@ -1,0 +1,11 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+sqlalchemy==2.0.36
+python-multipart==0.0.20
+scikit-learn==1.6.1
+numpy==2.2.1
+joblib==1.4.2
+pillow==11.1.0
+opencv-python-headless==4.11.0.86
+tldextract==5.1.3
