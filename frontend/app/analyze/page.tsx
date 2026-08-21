@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { api, AnalysisResult } from "@/lib/api";
+import { analyzeMessage } from "@/services/analysisService";
+import { AnalysisResult } from "@/lib/api";
 import { ResultPanel } from "@/components/ResultPanel";
 
 const SAMPLES = [
@@ -39,10 +40,7 @@ export default function AnalyzePage() {
     setBusy(true);
     setErr(null);
     try {
-      const r = await api<AnalysisResult>("/api/analyze/message", {
-        method: "POST",
-        body: JSON.stringify({ channel, sender, text }),
-      });
+      const r = await analyzeMessage({ channel, sender, text });
       setResult(r);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "Failed");

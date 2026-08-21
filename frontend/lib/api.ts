@@ -1,3 +1,5 @@
+import { getAccessToken, refreshAccessToken } from "@/lib/insforge";
+
 export type Reason = {
   code: string;
   title: string;
@@ -7,7 +9,7 @@ export type Reason = {
 };
 
 export type AnalysisResult = {
-  id?: number;
+  id?: string | number;
   score: number;
   band: string;
   verdict: string;
@@ -26,14 +28,42 @@ export type AnalysisResult = {
   ml: Record<string, unknown>;
 };
 
+function userMessage(status: number, body: string) {
+  if (status === 401 || status === 403) return "Your session expired. Please sign in again.";
+  if (status === 413) return "That file is too large. Use an image under 8 MB.";
+  if (status === 415) return "Unsupported file type. Use PNG, JPG, or WEBP.";
+  if (status === 422) return "Please check your input and try again.";
+  if (status >= 500) return "Analysis service is unavailable. Please try again.";
+  if (!body) return "Request failed. Please try again.";
+  try {
+    const parsed = JSON.parse(body) as { detail?: unknown; error?: string; message?: string };
+    if (typeof parsed.detail === "string") return parsed.detail;
+    if (parsed.message) return parsed.message;
+    if (parsed.error) return parsed.error;
+  } catch {
+    /* plain text */
+  }
+  if (body.length < 180 && !body.includes("Traceback")) return body;
+  return "Request failed. Please try again.";
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    ...init,
-    headers: { ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }), ...init?.headers },
-  });
+  let token = getAccessToken();
+  if (!token) token = await refreshAccessToken();
+  const isForm = init?.body instanceof FormData;
+  const headers = new Headers(init?.headers);
+  if (!isForm && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  let res: Response;
+  try {
+    res = await fetch(path, { ...init, headers });
+  } catch {
+    throw new Error("Network unavailable. Check your connection and try again.");
+  }
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || res.statusText);
+    throw new Error(userMessage(res.status, text));
   }
   return res.json() as Promise<T>;
 }

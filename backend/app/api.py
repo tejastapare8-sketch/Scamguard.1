@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import json
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
-from app.database import Detection, Report, SessionLocal
 from app.engines.risk_engine import (
     analyze_conversation_full,
     analyze_message,
@@ -14,8 +11,8 @@ from app.engines.risk_engine import (
     analyze_tx,
     analyze_url_only,
 )
+from app.insforge_client import persist_analysis, require_user
 from app.schemas import (
-    AnalysisResult,
     ConversationAnalyzeRequest,
     MessageAnalyzeRequest,
     TransactionAnalyzeRequest,
@@ -24,156 +21,110 @@ from app.schemas import (
 
 router = APIRouter(prefix="/api")
 
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+ALLOWED_TYPES = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
+MAX_BYTES = 8 * 1024 * 1024
 
 
-def persist(db: Session, channel: str, preview: str, result: AnalysisResult) -> AnalysisResult:
-    row = Detection(
-        channel=channel,
-        preview=(preview or "")[:220],
-        score=result.score,
-        verdict=result.verdict,
-        label=result.label,
-        result_json=result.model_dump_json(),
-    )
-    db.add(row)
-    db.commit()
-    db.refresh(row)
-    payload = result.model_dump()
-    payload["id"] = row.id
-    payload["created_at"] = row.created_at.isoformat() if row.created_at else None
-    return payload
+def _payload(result, analysis_id: str) -> dict:
+    data = result.model_dump()
+    data["id"] = analysis_id
+    return data
 
 
 @router.post("/analyze/message")
-def analyze_msg(body: MessageAnalyzeRequest, db: Session = Depends(get_db)):
-    result = analyze_message(body.text, sender=body.sender, channel=body.channel, extra_urls=body.urls, subject=body.subject)
-    return persist(db, body.channel, body.text, result)
+def analyze_msg(body: MessageAnalyzeRequest, user: dict = Depends(require_user)):
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="Message text is required.")
+    if len(text) > 20000:
+        raise HTTPException(status_code=422, detail="Message is too long.")
+    result = analyze_message(text, sender=body.sender, channel=body.channel, extra_urls=body.urls, subject=body.subject)
+    analysis_id = persist_analysis(user, input_type=body.channel, original_text=text, result=result.model_dump())
+    return _payload(result, analysis_id)
 
 
 @router.post("/analyze/conversation")
-def analyze_convo(body: ConversationAnalyzeRequest, db: Session = Depends(get_db)):
+def analyze_convo(body: ConversationAnalyzeRequest, user: dict = Depends(require_user)):
+    if not body.turns:
+        raise HTTPException(status_code=422, detail="Add at least one conversation turn.")
     turns = [t.model_dump() for t in body.turns]
     result = analyze_conversation_full(turns, sender=body.sender, channel=body.channel)
     preview = " | ".join((t.text[:60] for t in body.turns[:4]))
-    return persist(db, "conversation", preview, result)
+    analysis_id = persist_analysis(
+        user,
+        input_type="conversation",
+        original_text="\n".join(t.text for t in body.turns),
+        result=result.model_dump(),
+        extra={"preview": preview, "conversation_turns": turns},
+    )
+    return _payload(result, analysis_id)
 
 
 @router.post("/analyze/url")
-def analyze_url_ep(body: UrlAnalyzeRequest, db: Session = Depends(get_db)):
-    result = analyze_url_only(body.url, claimed_brand=body.claimed_brand)
-    return persist(db, "url", body.url, result)
+def analyze_url_ep(body: UrlAnalyzeRequest, user: dict = Depends(require_user)):
+    url = (body.url or "").strip()
+    if not url:
+        raise HTTPException(status_code=422, detail="A URL is required.")
+    result = analyze_url_only(url, claimed_brand=body.claimed_brand)
+    analysis_id = persist_analysis(user, input_type="url", original_text=url, result=result.model_dump())
+    return _payload(result, analysis_id)
 
 
 @router.post("/analyze/transaction")
-def analyze_transaction(body: TransactionAnalyzeRequest, db: Session = Depends(get_db)):
+def analyze_transaction(body: TransactionAnalyzeRequest, user: dict = Depends(require_user)):
     result = analyze_tx([h.model_dump() for h in body.history], body.current.model_dump())
     preview = f"₹{body.current.amount} → {body.current.beneficiary}"
-    return persist(db, "transaction", preview, result)
+    analysis_id = persist_analysis(
+        user,
+        input_type="transaction",
+        original_text=preview,
+        result=result.model_dump(),
+        extra={"preview": preview, "transaction": body.current.model_dump()},
+    )
+    return _payload(result, analysis_id)
 
 
 @router.post("/analyze/screenshot")
 async def analyze_shot(
     text: Optional[str] = Form(None),
     sender: Optional[str] = Form(None),
+    storage_path: Optional[str] = Form(None),
+    storage_url: Optional[str] = Form(None),
+    file_name: Optional[str] = Form(None),
+    mime_type: Optional[str] = Form(None),
+    file_size: Optional[int] = Form(None),
     file: UploadFile | None = File(None),
-    db: Session = Depends(get_db),
+    user: dict = Depends(require_user),
 ):
-    image_bytes = await file.read() if file is not None else None
-    result = analyze_screenshot(text or "", image_bytes, sender=sender)
-    preview = (text or "")[:220] or (file.filename if file else "screenshot")
-    return persist(db, "screenshot", preview, result)
-
-
-@router.post("/reports")
-def add_report(detection_id: int | None = None, notes: str = "", confirmed_scam: bool = True, db: Session = Depends(get_db)):
-    row = Report(detection_id=detection_id, notes=notes, confirmed_scam=1 if confirmed_scam else 0)
-    db.add(row)
-    db.commit()
-    return {"ok": True, "id": row.id}
-
-
-@router.get("/detections")
-def list_detections(limit: int = 50, db: Session = Depends(get_db)):
-    rows = db.query(Detection).order_by(Detection.id.desc()).limit(limit).all()
-    return [
-        {
-            "id": r.id,
-            "created_at": r.created_at.isoformat() if r.created_at else None,
-            "channel": r.channel,
-            "preview": r.preview,
-            "score": r.score,
-            "verdict": r.verdict,
-            "label": r.label,
-        }
-        for r in rows
-    ]
-
-
-@router.get("/detections/{detection_id}")
-def get_detection(detection_id: int, db: Session = Depends(get_db)):
-    row = db.get(Detection, detection_id)
-    if not row:
-        return {"error": "not found"}
-    data = json.loads(row.result_json)
-    data.update(
-        {
-            "id": row.id,
-            "created_at": row.created_at.isoformat() if row.created_at else None,
-            "channel": row.channel,
-            "preview": row.preview,
-        }
+    image_bytes = None
+    if file is not None:
+        if file.content_type and file.content_type not in ALLOWED_TYPES:
+            raise HTTPException(status_code=415, detail="Unsupported file type. Use PNG, JPG, or WEBP.")
+        image_bytes = await file.read()
+        if not image_bytes:
+            raise HTTPException(status_code=422, detail="That file is empty or unreadable.")
+        if len(image_bytes) > MAX_BYTES:
+            raise HTTPException(status_code=413, detail="File is too large. Use an image under 8 MB.")
+    ocr_text = text or ""
+    if not ocr_text and not image_bytes:
+        raise HTTPException(status_code=422, detail="Upload an image or paste extracted text.")
+    result = analyze_screenshot(ocr_text, image_bytes, sender=sender)
+    preview = (ocr_text or "")[:220] or file_name or (file.filename if file else "screenshot")
+    analysis_id = persist_analysis(
+        user,
+        input_type="screenshot",
+        original_text=ocr_text,
+        result=result.model_dump(),
+        extra={
+            "preview": preview,
+            "screenshot": {
+                "storage_path": storage_path or "",
+                "storage_url": storage_url,
+                "file_name": file_name or (file.filename if file else None),
+                "mime_type": mime_type or (file.content_type if file else None),
+                "file_size": file_size or (len(image_bytes) if image_bytes else None),
+                "ocr_text": ocr_text,
+            },
+        },
     )
-    return data
-
-
-@router.get("/dashboard/stats")
-def stats(db: Session = Depends(get_db)):
-    rows = db.query(Detection).all()
-    verdicts = {}
-    channels = {}
-    critical = 0
-    phishing = 0
-    payment = 0
-    suspicious = 0
-    for r in rows:
-        verdicts[r.verdict] = verdicts.get(r.verdict, 0) + 1
-        channels[r.channel] = channels.get(r.channel, 0) + 1
-        if r.score >= 76:
-            critical += 1
-        if r.verdict == "phishing":
-            phishing += 1
-        if r.verdict == "payment_fraud":
-            payment += 1
-        if r.verdict in ("suspicious", "likely_scam"):
-            suspicious += 1
-    recent = (
-        db.query(Detection).order_by(Detection.id.desc()).limit(8).all()
-    )
-    return {
-        "messages_analyzed": len(rows),
-        "suspicious": suspicious,
-        "phishing": phishing,
-        "payment_scams": payment,
-        "critical": critical,
-        "verdicts": verdicts,
-        "channels": channels,
-        "recent": [
-            {
-                "id": r.id,
-                "preview": r.preview,
-                "score": r.score,
-                "verdict": r.verdict,
-                "label": r.label,
-                "channel": r.channel,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-            }
-            for r in recent
-        ],
-    }
+    return _payload(result, analysis_id)

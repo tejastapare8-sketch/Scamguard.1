@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { api, AnalysisResult } from "@/lib/api";
+import { analyzeConversation } from "@/services/analysisService";
+import { AnalysisResult } from "@/lib/api";
 import { ResultPanel } from "@/components/ResultPanel";
 
 const DEMO = `Scammer: Congratulations! You won ₹50,000.
@@ -36,10 +37,7 @@ export default function ConversationPage() {
     setBusy(true);
     setErr(null);
     try {
-      const r = await api<AnalysisResult>("/api/analyze/conversation", {
-        method: "POST",
-        body: JSON.stringify({ channel: "whatsapp", turns: parseTranscript(raw) }),
-      });
+      const r = await analyzeConversation(parseTranscript(raw));
       setResult(r);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "Failed");

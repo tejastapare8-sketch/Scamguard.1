@@ -6,6 +6,9 @@ backend/**/__pycache__
 .venv
 venv
 .env
+.env.local
+frontend/.env.local
+backend/.env
 .DS_Store
 
 # InsForge & AI agent skills

@@ -4,24 +4,24 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { api, AnalysisResult } from "@/lib/api";
 import { ResultPanel } from "@/components/ResultPanel";
-
-type Detail = AnalysisResult & {
-  preview?: string;
-  channel?: string;
-  created_at?: string | null;
-};
+import { getAnalysis } from "@/services/historyService";
+import { resultFromRow } from "@/lib/map";
+import { AnalysisResult } from "@/lib/api";
 
 export default function AlertDetailPage() {
   const params = useParams<{ id: string }>();
-  const [data, setData] = useState<Detail | null>(null);
+  const [data, setData] = useState<AnalysisResult | null>(null);
+  const [preview, setPreview] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (!params?.id) return;
-    api<Detail>(`/api/detections/${params.id}`)
-      .then(setData)
+    getAnalysis(params.id)
+      .then((row) => {
+        setData(resultFromRow(row));
+        setPreview(row.preview || row.original_text || "");
+      })
       .catch((e) => setErr(e.message));
   }, [params?.id]);
 
@@ -32,7 +32,7 @@ export default function AlertDetailPage() {
       </Link>
       {err && <p className="text-sm text-danger">{err}</p>}
       {!data && !err && <p className="text-sm text-slate-400">Loading…</p>}
-      {data && data.score != null && <ResultPanel result={data} preview={data.preview} />}
+      {data && <ResultPanel result={data} preview={preview} />}
     </div>
   );
 }

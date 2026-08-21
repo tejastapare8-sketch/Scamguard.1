@@ -65,6 +65,8 @@ export default function SettingsPage() {
             ["/screenshot", "Screenshot / QR"],
             ["/url", "URL intel"],
             ["/transactions", "Transactions"],
+            ["/history", "History"],
+            ["/profile", "Profile"],
           ].map(([href, label]) => (
             <a
               key={href}

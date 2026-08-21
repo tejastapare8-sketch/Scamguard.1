@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { AnalysisResult } from "@/lib/api";
 import { useSettings } from "@/components/SettingsProvider";
 import { bandLabel, isScamVerdict, VERDICT_META } from "@/lib/verdicts";
+import { reportAnalysis } from "@/services/historyService";
 import { AlertTriangle, Ban, CheckCircle2, Flag, Quote, ShieldAlert, ShieldBan } from "lucide-react";
 
 export function ResultPanel({
@@ -16,15 +18,19 @@ export function ResultPanel({
   const scam = isScamVerdict(result.verdict) || result.score >= 51;
   const meta = VERDICT_META[result.verdict] || VERDICT_META.suspicious;
   const quote = (preview || "").trim() || result.summary;
-  const alreadyBlocked = result.id != null && blocked.includes(result.id);
+  const alreadyBlocked = result.id != null && blocked.includes(String(result.id));
+
+  const [reportState, setReportState] = useState<string | null>(null);
 
   async function report() {
     if (!result.id) return;
-    await fetch(
-      `/api/reports?detection_id=${result.id}&notes=${encodeURIComponent("Reported from alert card")}&confirmed_scam=true`,
-      { method: "POST" }
-    );
-    alert("Report saved. Thank you.");
+    setReportState("Saving…");
+    try {
+      await reportAnalysis(String(result.id), "Reported from alert card");
+      setReportState("Report saved.");
+    } catch (e) {
+      setReportState(e instanceof Error ? e.message : "Could not save the report.");
+    }
   }
 
   if (!scam && result.verdict === "safe") {
@@ -151,6 +157,7 @@ export function ResultPanel({
             Report
           </button>
         </div>
+        {reportState && <p className="text-center text-sm text-slate-600">{reportState}</p>}
 
         {result.social_engineering?.length > 0 && (
           <div className="flex flex-wrap gap-2">

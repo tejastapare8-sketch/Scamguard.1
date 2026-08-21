@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AnalysisResult } from "@/lib/api";
 import { ResultPanel } from "@/components/ResultPanel";
+import { analyzeScreenshot, uploadScreenshot } from "@/services/screenshotService";
 
 export default function ScreenshotPage() {
   const [file, setFile] = useState<File | null>(null);
@@ -17,22 +18,23 @@ export default function ScreenshotPage() {
     setErr(null);
     try {
       let text = ocr;
+      let storage;
+      if (file) {
+        setProgress("Uploading screenshot…");
+        storage = await uploadScreenshot(file);
+      }
       if (file && !text.trim()) {
-        setProgress("Running on-device OCR…");
+        setProgress("Processing OCR…");
         const Tesseract = (await import("tesseract.js")).default;
         const { data } = await Tesseract.recognize(file, "eng");
         text = data.text || "";
         setOcr(text);
       }
-      setProgress("Scoring + QR decode…");
-      const fd = new FormData();
-      fd.set("text", text);
-      if (file) fd.set("file", file);
-      const res = await fetch("/api/analyze/screenshot", { method: "POST", body: fd });
-      if (!res.ok) throw new Error(await res.text());
-      setResult(await res.json());
+      setProgress("Analyzing…");
+      const analyzed = await analyzeScreenshot({ file, text, storage });
+      setResult(analyzed);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : "Failed");
+      setErr(e instanceof Error ? e.message : "Screenshot analysis failed.");
     } finally {
       setBusy(false);
       setProgress("");
@@ -43,9 +45,10 @@ export default function ScreenshotPage() {
     <div className="mx-auto max-w-3xl">
       <h1 className="text-2xl font-extrabold text-navy">Screenshot & QR analysis</h1>
       <p className="mt-1 text-sm text-slate-500">
-        Upload an SMS / WhatsApp / UPI screenshot. OCR runs in the browser; the backend decodes QR codes.
+        Upload an SMS / WhatsApp / UPI screenshot. The file is stored privately; OCR runs in the browser; the backend
+        decodes QR codes when present.
       </p>
-      <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] || null)} className="mt-5 block text-sm" />
+      <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setFile(e.target.files?.[0] || null)} className="mt-5 block text-sm" />
       <textarea
         value={ocr}
         onChange={(e) => setOcr(e.target.value)}

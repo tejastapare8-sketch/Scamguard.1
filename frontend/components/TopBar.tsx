@@ -1,21 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, Menu, Settings, ShieldCheck } from "lucide-react";
+import { Bell, LogOut, Menu, Settings, ShieldCheck, UserRound } from "lucide-react";
 import { useState } from "react";
 import { usePathname } from "next/navigation";
+import { useAuth } from "@/components/AuthProvider";
 
 const MOBILE = [
   { href: "/", label: "Home" },
   { href: "/alerts", label: "Alerts" },
   { href: "/activity", label: "Activity" },
+  { href: "/profile", label: "Profile" },
   { href: "/settings", label: "Settings" },
   { href: "/analyze", label: "Scan message" },
+  { href: "/history", label: "History" },
 ];
 
 export function TopBar() {
   const [open, setOpen] = useState(false);
   const path = usePathname();
+  const { logout } = useAuth();
 
   return (
     <header className="border-b border-slate-200 bg-white">
@@ -35,12 +39,18 @@ export function TopBar() {
           </div>
         </div>
         <div className="flex items-center gap-1 text-slate-500">
+          <Link href="/profile" className="rounded-full p-2 hover:bg-slate-100" aria-label="Profile">
+            <UserRound size={18} />
+          </Link>
           <Link href="/alerts" className="rounded-full p-2 hover:bg-slate-100" aria-label="Notifications">
             <Bell size={18} />
           </Link>
           <Link href="/settings" className="rounded-full p-2 hover:bg-slate-100" aria-label="Settings">
             <Settings size={18} />
           </Link>
+          <button type="button" onClick={() => void logout()} className="rounded-full p-2 hover:bg-slate-100" aria-label="Log out">
+            <LogOut size={18} />
+          </button>
         </div>
       </div>
       {open && (

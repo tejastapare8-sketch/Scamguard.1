@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, BarChart3, CheckCircle2, ChevronRight, ShieldAlert } from "lucide-react";
-import { api } from "@/lib/api";
+import { listAnalyses } from "@/services/historyService";
+import { toListItem } from "@/lib/map";
 import { bucket, clockTime, VERDICT_META } from "@/lib/verdicts";
 
 type Row = {
-  id: number;
+  id: string;
   created_at: string | null;
   channel: string;
   preview: string;
@@ -18,9 +19,13 @@ type Row = {
 
 export default function ActivityPage() {
   const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api<Row[]>("/api/detections?limit=100").then(setRows).catch(() => setRows([]));
+    listAnalyses({ from: 0, to: 99 })
+      .then(({ rows: data }) => setRows(data.map(toListItem)))
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false));
   }, []);
 
   const today = useMemo(() => {
@@ -84,7 +89,9 @@ export default function ActivityPage() {
             <div className="mb-2 text-sm font-bold text-navy">Recent messages</div>
             <div className="divide-y divide-slate-100 rounded-xl border border-slate-100">
               {recent.length === 0 && (
-                <div className="px-4 py-8 text-center text-sm text-slate-400">No messages analyzed yet.</div>
+                <div className="px-4 py-8 text-center text-sm text-slate-400">
+                  {loading ? "Loading history…" : "No analyses yet."}
+                </div>
               )}
               {recent.map((r) => {
                 const b = bucket(r.verdict);

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { api, AnalysisResult } from "@/lib/api";
+import { analyzeUrl } from "@/services/analysisService";
+import { AnalysisResult } from "@/lib/api";
 import { ResultPanel } from "@/components/ResultPanel";
 
 export default function UrlPage() {
@@ -13,12 +14,7 @@ export default function UrlPage() {
   async function run() {
     setBusy(true);
     try {
-      setResult(
-        await api<AnalysisResult>("/api/analyze/url", {
-          method: "POST",
-          body: JSON.stringify({ url, claimed_brand: brand }),
-        })
-      );
+      setResult(await analyzeUrl(url, brand));
     } finally {
       setBusy(false);
     }

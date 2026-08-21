@@ -2,17 +2,20 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Bell, Home, Settings, ShieldCheck } from "lucide-react";
+import { Activity, Bell, Home, LogOut, Settings, ShieldCheck, UserRound } from "lucide-react";
+import { useAuth } from "@/components/AuthProvider";
 
 const NAV = [
   { href: "/", label: "Home", icon: Home, idle: "text-sky-300", active: "bg-brand" },
   { href: "/alerts", label: "Alerts", icon: Bell, idle: "text-red-400", active: "bg-danger" },
   { href: "/activity", label: "Activity", icon: Activity, idle: "text-emerald-400", active: "bg-safe" },
+  { href: "/profile", label: "Profile", icon: UserRound, idle: "text-sky-200", active: "bg-sky-600" },
   { href: "/settings", label: "Settings", icon: Settings, idle: "text-violet-300", active: "bg-violet-500" },
 ];
 
 export function Sidebar() {
   const path = usePathname();
+  const { logout, user } = useAuth();
   return (
     <aside className="hidden w-[232px] shrink-0 flex-col bg-navy text-white md:flex">
       <div className="flex items-center gap-2.5 px-6 py-7">
@@ -39,8 +42,16 @@ export function Sidebar() {
           );
         })}
       </nav>
-      <div className="mt-auto px-6 py-6 text-[11px] leading-relaxed text-slate-400">
-        Automatic scam detection for SMS, email, UPI &amp; links.
+      <div className="mt-auto px-4 py-6">
+        <div className="mb-3 truncate px-2 text-[11px] text-slate-400">{user?.email}</div>
+        <button
+          type="button"
+          onClick={() => void logout()}
+          className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-white/10"
+        >
+          <LogOut size={18} />
+          Log out
+        </button>
       </div>
     </aside>
   );

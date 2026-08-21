@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { api, AnalysisResult } from "@/lib/api";
+import { analyzeTransaction } from "@/services/analysisService";
+import { AnalysisResult } from "@/lib/api";
 import { ResultPanel } from "@/components/ResultPanel";
 
 export default function TxPage() {
@@ -23,13 +24,9 @@ export default function TxPage() {
         channel: "upi",
       }));
       setResult(
-        await api<AnalysisResult>("/api/analyze/transaction", {
-          method: "POST",
-          body: JSON.stringify({
-            user_id: "demo-user",
-            history,
-            current: { amount, beneficiary, is_new_beneficiary: neu, hour, channel: "upi" },
-          }),
+        await analyzeTransaction({
+          history,
+          current: { amount, beneficiary, is_new_beneficiary: neu, hour, channel: "upi" },
         })
       );
     } finally {

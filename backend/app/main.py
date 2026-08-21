@@ -2,8 +2,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import router
-from app.database import init_db
-from app.seed import seed_if_empty
 
 app = FastAPI(
     title="ScamGuard",
@@ -20,12 +18,6 @@ app.add_middleware(
 )
 
 app.include_router(router)
-
-
-@app.on_event("startup")
-def startup() -> None:
-    init_db()
-    seed_if_empty()
 
 
 @app.get("/api/health")
